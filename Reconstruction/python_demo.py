@@ -18,12 +18,10 @@ dset = ismrmrd.Dataset(filename, 'dataset', create_if_needed=False)
 
 gadget.process_config(dset.read_xml_header())
 
-for acqnum in range(0,dset.number_of_acquisitions()):
+for acqnum in range(0, dset.number_of_acquisitions()):
     acq = dset.read_acquisition(acqnum)
-    # print(acq.getHead().idx.kspace_encode_step_1)
-    # print(acq.getHead().idx.average)
-    gadget.process(acq.getHead(),np.transpose(acq.data))
+    gadget.process(acq.getHead(), np.transpose(acq.data.astype('complex128')))
 
-#Get result and display
+# Get result and display
 res = gadget.get_results()
-show.imshow(np.squeeze(abs(res[0][1])))
+show.imshow(np.squeeze(abs(res[0][1])), cmap='gray')

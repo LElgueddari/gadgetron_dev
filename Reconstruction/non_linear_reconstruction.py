@@ -1,15 +1,65 @@
-import numpy as np
-import pisap
-from scipy.io import loadmat
-from ismrmrdtools import transform
-from gadgetron import Gadget
+# -*- coding: utf-8 -*-
+##########################################################################
+# XXX - Copyright (C) XXX, 2017
+# Distributed under the terms of the CeCILL-B license, as published by
+# the CEA-CNRS-INRIA. Refer to the LICENSE file or to
+# http://www.cecill.info/licences/Licence_CeCILL-B_V1-en.html
+# for details.
+##########################################################################
+
+"""
+Non-cartesian reconstruction for Sparkling Trajectorie.
+"""
+
+# Package import
 import ismrmrd
-import ismrmrd.xsd
-from pisap.plugins.mri.reconstruct.reconstruct import sparse_rec_condatvu
+import numpy as np
+from scipy.io import loadmat
+from gadgetron import Gadget
+from pysap.plugins.mri.reconstruct.reconstruct import sparse_rec_condatvu
 
 
 class AccumulateAndRecon(Gadget):
+    """ Accumulator and reconstrcutor class.
+
+    Attributes
+    ----------
+    myBuffer: np.ndarray
+        The Buffer that accumulate the acquired data
+    myCounter: int
+        Counts the number of images
+    mySeries: int
+        Counts the number of Series (5 images = 1 series)
+    header: ismrmrd.xsd.ismrmrdHeader Object
+        Gives all the metadata of the acquisition
+    enc: ismrmrd.xsd.encoding
+        Gives all the information of the encoding parameters used
+    protocol: string
+        The name of the protocol (Gradient File), this name will be used to
+        load the k_space sample position
+    NEX: int
+        Number of excitation (to average the signal)
+    z_size: int
+        The number of slices
+    y_size: int
+        The number of spokes used to acquire the NMR signal
+    x_size: int
+        The number of samples per spokes
+    image_x: int
+        The 1 dimension of the output image size
+    image_y: int
+        The 2 dimension of the output image size
+    image_z: int
+        The 3 dimension of the output image size
+    """
     def __init__(self, next_gadget=None):
+        """ Initilize the 'AccumulateAndRecon' class.
+
+        Parameters
+        ----------
+        next_gadget: Gadget
+            The next Gadget in the pipeline process
+        """
         Gadget.__init__(self, next_gadget)
         self.myBuffer = None
         self.myCounter = 1
@@ -18,23 +68,49 @@ class AccumulateAndRecon(Gadget):
         self.enc = None
 
     def process_config(self, conf):
+        """ This method configures the attributes given the xml header.
+
+        Parameters
+        ----------
+        conf: string
+            The description of the xml header
+        """
         self.header = ismrmrd.xsd.CreateFromDocument(conf)
         self.protocol = str(self.header.measurementInformation.protocolName)
         self.enc = self.header.encoding[0]
         self.NEX = int(self.enc.encodingLimits.average.maximum) + 1
         self.z_size = int(self.enc.encodedSpace.matrixSize.z)
-        self.y_size = int(self.enc.encodingLimits.kspace_encoding_step_1.maximum) + 1
+        self.y_size = int(
+                self.enc.encodingLimits.kspace_encoding_step_1.maximum) + 1
         self.x_size = int(self.enc.encodedSpace.matrixSize.x)
-        self.image_x = int(self.enc.reconSpace.matrixSize.x)
-        self.image_y = int(self.enc.reconSpace.matrixSize.y)
-        self.image_z = int(self.enc.reconSpace.matrixSize.z)
+        self.image_x = int(
+                    self.header.userParameters.userParameterLong[2].value_)
+        self.image_y = self.image_x
+        for _ in range(15):
+            self.image_x
+        self.image_z = 1  # int(self.enc.reconSpace.matrixSize.z)
 
     def _reconstruct(self, data):
+        """ This method reconstruct the final image given the kspace data.
+
+        Parameters
+        ----------
+        data: np.ndarray
+            The kspace value in the Buffer
+
+        Returns
+        -------
+        x_final: np.ndarray
+            The solution of the iterative reconstruction algorithm
+        """
         samples = loadmat(self.protocol)
         samples = samples[samples.keys()[0]]
         samples /= 2*np.max(np.abs(samples).flatten())
-        max_iter = 150
-        image_shape = (512, 512)
+        max_iter = 500
+        if self.image_z == 1:
+            image_shape = (self.image_x, self.image_y)
+        else:
+            image_shape = (self.image_x, self.image_y, self.image_z)
         data = np.squeeze(data.astype('complex128'))
         data = np.mean(data, axis=len(data.shape)-1)
         data = np.transpose(data).flatten()
@@ -46,7 +122,7 @@ class AccumulateAndRecon(Gadget):
             std_est=None,
             std_est_method=None,
             std_thr=2.,
-            mu=0.0,
+            mu=1e-5,
             tau=None,
             sigma=None,
             relaxation_factor=1.0,
@@ -60,6 +136,17 @@ class AccumulateAndRecon(Gadget):
         return x_final
 
     def process(self, acq, data, *args):
+        """
+        Parameters
+        ----------
+        acq:
+        data: np.ndarray
+            The kspace value in the Buffer
+
+        Returns
+        -------
+
+        """
         if self.myBuffer is None:
             channels = acq.active_channels
             if self.enc.encodingLimits.slice is not None:

@@ -13,6 +13,7 @@ Non-cartesian reconstruction for Sparkling Trajectorie.
 
 # Package import
 import ismrmrd
+import h5py
 import numpy as np
 from scipy.io import loadmat
 from gadgetron import Gadget
@@ -75,16 +76,25 @@ class AccumulateAndRecon(Gadget):
         conf: string
             The description of the xml header
         """
+        print('BELLO')
         self.header = ismrmrd.xsd.CreateFromDocument(conf)
+        import ipdb; ipdb.set_trace()
         self.protocol = str(self.header.measurementInformation.protocolName)
         self.enc = self.header.encoding[0]
+        self.gradient_filename = self.enc.trajectoryDescription.comment
+        self.dwelltime = self.header.userParameters.userParameterDouble[0].value_
+        print('dwelltime', self.dwelltime)
+        self.gradient_filename = self.gradient_filename[:-4]
+        print('gradinet filename', self.gradient_filename)
+        for r in range(10):
+                print(' ')
         self.NEX = int(self.enc.encodingLimits.average.maximum) + 1
         self.z_size = int(self.enc.encodedSpace.matrixSize.z)
         self.y_size = int(
                 self.enc.encodingLimits.kspace_encoding_step_1.maximum) + 1
         self.x_size = int(self.enc.encodedSpace.matrixSize.x)
         self.image_x = int(
-                    self.header.userParameters.userParameterLong[2].value_)
+                    self.header.userParameters.userParameterLong[0].value_)
         self.image_y = self.image_x
         for _ in range(15):
             self.image_x
@@ -103,16 +113,18 @@ class AccumulateAndRecon(Gadget):
         x_final: np.ndarray
             The solution of the iterative reconstruction algorithm
         """
-        samples = loadmat(self.protocol)
-        samples = samples[samples.keys()[0]]
+        print("Starting the reconstruction process")
+        folder_name = '/neurospin/acq-7t-siemens/Loubna/samples_gadgetron/'
+        F = h5py.File(folder_name + self.gradient_filename  + '.mat')
+        samples = np.array(F["samples"])
+        samples = samples.T
         samples /= 2*np.max(np.abs(samples).flatten())
-        max_iter = 500
+        max_iter = 10
         if self.image_z == 1:
             image_shape = (self.image_x, self.image_y)
         else:
             image_shape = (self.image_x, self.image_y, self.image_z)
         data = np.squeeze(data.astype('complex128'))
-        data = np.mean(data, axis=len(data.shape)-1)
         data = np.transpose(data).flatten()
         x_final, _ = sparse_rec_condatvu(
             data=data,
